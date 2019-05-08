@@ -152,7 +152,8 @@ def build_brier_fractions(res_files,index,columns,coordx,coordy,thresh):
         res_ci.close()
     return (fr15,fr30,fr45,fr60)
 
-def build_weighted_fractions(res_files,index,columns,coordx,coordy,thresh):
+def build_weighted_fractions_ci(res_files,index,columns,coordx,coordy,thresh):
+    print('weighted fractions')
     fr15 = pd.DataFrame(index=index,columns=columns)
     fr30 = pd.DataFrame(index=index,columns=columns)
     fr45 = pd.DataFrame(index=index,columns=columns)
@@ -177,12 +178,16 @@ def build_weighted_fractions(res_files,index,columns,coordx,coordy,thresh):
             ci = res_ci.sel(west_east=xwin,south_north=ywin)
             for f in range(4):
                 grid_vals = ci[f].values
-                ones = np.zeros_like(grid_vals)
-                index = np.where(grid_vals/thresh<1)
-                ones[index]=1
-                grid_frac = np.sum(ones,axis=0)/20
-                #ens_vals = np.array([np.sum(np.multiply(grid_vals[i],m))/np.sum(m) for i in range(20)])
-                frac = np.sum(np.multiply(m,grid_frac))/np.sum(m)
+                clear_count = 0
+                for i in range(20):
+                    weight_val = np.sum(np.multiply(m,grid_vals[i]))/np.sum(m)
+                    if(weight_val/thresh<1):
+                        clear_count += 1
+                frac = clear_count/20
+                #ones = np.zeros_like(grid_vals)
+                #index = np.where(grid_vals/thresh<1)
+                #ones[index]=1
+                #grid_frac = np.sum(ones,axis=0)/20
                 try:
                     if(f==0):
                         fr15.at[res_times[f],c] = frac
@@ -196,6 +201,59 @@ def build_weighted_fractions(res_files,index,columns,coordx,coordy,thresh):
                     continue
         res_ci.close()
     return (fr15,fr30,fr45,fr60)  
+
+
+def build_weighted_fractions_prob(res_files,index,columns,coordx,coordy,thresh):
+    print('weighted fractions')
+    fr15 = pd.DataFrame(index=index,columns=columns)
+    fr30 = pd.DataFrame(index=index,columns=columns)
+    fr45 = pd.DataFrame(index=index,columns=columns)
+    fr60 = pd.DataFrame(index=index,columns=columns)
+    ### mask
+    m = np.zeros((7,7))
+    var = 2
+    for i in range(7):
+        for j in range(7):
+            m[i,j] = exp(-((i-3)**2+(j-3)**2)/(2*var))        
+    m = m/m[3,3]
+    ###
+    for res_file in res_files:
+        res_ci = xr.open_dataarray(res_file)
+        res_ci = res_ci.isel(time=slice(1,5))
+        res_times = res_ci.time.values
+        for c in range(len(coordx)):
+            x = coordx[c]
+            y = coordy[c]
+            xwin = [x-3+i for i in range(7)]
+            ywin = [y-3+i for i in range(7)]
+            ci = res_ci.sel(west_east=xwin,south_north=ywin)
+            for f in range(4):
+                grid_vals = ci[f].values
+                #clear_count = 0
+                #for i in range(20):
+                #    weight_val = np.sum(np.multiply(m,grid_vals[i]))/np.sum(m)
+                #    if(weight_val/thresh<1):
+                #        clear_count += 1
+                #frac = clear_count/20
+                ones = np.zeros_like(grid_vals)
+                index = np.where(grid_vals/thresh<1)
+                ones[index]=1
+                grid_frac = np.sum(ones,axis=0)/20
+                frac = np.sum(np.multiply(m,grid_frac))/np.sum(m)
+                try:
+                    if(f==0):
+                        fr15.at[res_times[f],c] = frac
+                    elif(f==1):
+                        fr30.at[res_times[f],c] = frac
+                    elif(f==2):
+                        fr45.at[res_times[f],c] = frac
+                    elif(f==3):
+                        fr60.at[res_times[f],c] = frac
+                except:
+                    continue
+        res_ci.close()
+    return (fr15,fr30,fr45,fr60) 
+
 
 
 def build_benchmark_fractions(data_files,index,thresh):
@@ -232,6 +290,104 @@ def build_benchmark_fractions(data_files,index,thresh):
     return (fr15,fr30,fr45,fr60)
         
 
-
+def build_solar_fractions_weightci(res_files,index,weights,columns,coordx,coordy,thresh):
+    print('solar fractions')
+    fr15 = pd.DataFrame(index=index,columns=[0])
+    fr30 = pd.DataFrame(index=index,columns=[0])
+    fr45 = pd.DataFrame(index=index,columns=[0])
+    fr60 = pd.DataFrame(index=index,columns=[0])
+    ci_store = np.zeros(len(coordx))
+    ### mask, currently not used
+    m = np.zeros((7,7))
+    var = 2
+    for i in range(7):
+        for j in range(7):
+            m[i,j] = exp(-((i-3)**2+(j-3)**2)/(2*var))        
+    m = m/m[3,3]
+    ###
+    for res_file in res_files:
+        print(res_file)
+        res_ci = xr.open_dataarray(res_file)
+        res_ci = res_ci.isel(time=slice(1,5))
+        res_times = res_ci.time.values
+        for f in range(4):
+            ci_store = np.zeros((len(weights),20))
+            for c in range(len(coordx)):
+                x = coordx[c]
+                y = coordy[c]
+                w = weights[c]
+                #xwin = [x-3+i for i in range(7)]
+                #ywin = [y-3+i for i in range(7)]
+                ci = res_ci.sel(west_east=x,south_north=y)
+                ci_store[c] = w*ci[f].values
+                #ones = np.zeros_like(grid_vals)
+                #index = np.where(grid_vals/thresh<1)
+                #ones[index]=1
+                #grid_frac = np.sum(ones,axis=0)/20
+            ens_vals = np.sum(ci_store,axis=0)/np.sum(weights)
+            count_clear = 0
+            for i in range(20):
+                if(ens_vals[i]<thresh):
+                    count_clear += 1
+            frac = count_clear/20
+            try:
+                if(f==0):
+                    fr15.at[res_times[f],0] = frac
+                elif(f==1):
+                    fr30.at[res_times[f],0] = frac
+                elif(f==2):
+                    fr45.at[res_times[f],0] = frac
+                elif(f==3):
+                    fr60.at[res_times[f],0] = frac
+            except:
+                continue
+        res_ci.close()
+    return (fr15,fr30,fr45,fr60)  
     
+def build_solar_fractions_weightprob(res_files,index,weights,columns,coordx,coordy,thresh):
+    print('solar fractions')
+    fr15 = pd.DataFrame(index=index,columns=[0])
+    fr30 = pd.DataFrame(index=index,columns=[0])
+    fr45 = pd.DataFrame(index=index,columns=[0])
+    fr60 = pd.DataFrame(index=index,columns=[0])
+    ### mask, currently not used
+    m = np.zeros((7,7))
+    var = 2
+    for i in range(7):
+        for j in range(7):
+            m[i,j] = exp(-((i-3)**2+(j-3)**2)/(2*var))        
+    m = m/m[3,3]
+    ###
+    for res_file in res_files:
+        print(res_file)
+        res_ci = xr.open_dataarray(res_file)
+        res_ci = res_ci.isel(time=slice(1,5))
+        res_times = res_ci.time.values
+        for f in range(4):
+            prob_store = np.zeros(len(weights))
+            for c in range(len(coordx)):
+                x = coordx[c]
+                y = coordy[c]
+                w = weights[c]
+                ci = res_ci.sel(west_east=x,south_north=y)
+                ci_ens = ci[f].values
+                prob_store[c] = w*len(ci_ens[np.where(ci_ens<thresh)])/20
+            frac = np.sum(prob_store)/np.sum(weights)
+            try:
+                if(f==0):
+                    fr15.at[res_times[f],0] = frac
+                elif(f==1):
+                    fr30.at[res_times[f],0] = frac
+                elif(f==2):
+                    fr45.at[res_times[f],0] = frac
+                elif(f==3):
+                    fr60.at[res_times[f],0] = frac
+            except:
+                continue
+        res_ci.close()
+    return (fr15,fr30,fr45,fr60) 
+
+
+
+
     
